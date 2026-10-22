@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ugKNh1RiYGGs0eWfWD0F97VIe5n5a3X5xG7Qg6pSgKo='; style-src 'sha256-NWd6z6YZOyCrDCyIxOmT1xsWFpq68sszru+Udsv3G2U='; connect-src https://uaelnzqpetsvajkgnfry.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>Verify your email — Lecture Agent</title>
+  <script>
+(() => {
+  'use strict';
+  const endpoint = 'https://uaelnzqpetsvajkgnfry.supabase.co/auth/v1/verify';
+  // Public project identity, never a secret/service-role key.
+  const publicKey = 'sb_publishable_TowjnV-MyuSdVwgmY9WVFQ_iinIKUyI';
+  let fragment = location.hash.slice(1);
+  let token = '';
+  let state = 'missing';
+  let busy = false;
+  try {
+    // Run in the head, before rendering or any network request. Do not retain
+    // query parameters, browser history state, or credentials in the URL.
+    history.replaceState(null, '', location.pathname);
+    if (fragment.length <= 2048) {
+      const params = new URLSearchParams(fragment);
+      const hashes = params.getAll('token_hash');
+      if (hashes.length === 1 && /^[A-Za-z0-9_-]{20,256}$/.test(hashes[0])
+          && [...params.keys()].every(key => key === 'token_hash')) {
+        token = hashes[0];
+        state = 'ready';
+      }
+    }
+  } catch {
+    state = 'unsafe';
+  }
+  fragment = '';
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const title = document.getElementById('heading');
+    const message = document.getElementById('message');
+    const button = document.getElementById('verify');
+    const detail = document.getElementById('detail');
+    function show(heading, text, action = '') {
+      title.textContent = heading;
+      message.textContent = text;
+      button.hidden = !action;
+      button.textContent = action;
+      button.disabled = busy;
+    }
+    if (state === 'unsafe') {
+      show('Please close this page', 'Your browser could not clear the confirmation link from the address bar. Open the email link in a supported browser.');
+      return;
+    }
+    if (state !== 'ready') {
+      show('Open your confirmation email', 'Use the Verify email link in the email from Lecture Agent. If you have already verified your email, return to Lecture Agent and sign in.');
+      return;
+    }
+    show('Verify your email', 'Confirm your email address to continue with Lecture Agent.', 'Verify email');
+    button.addEventListener('click', async () => {
+      if (busy || !token) return;
+      busy = true;
+      show('Verifying your email…', 'Please keep this page open for a moment.', 'Verifying…');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: publicKey },
+          body: JSON.stringify({ token_hash: token, type: 'email' }),
+          credentials: 'omit', cache: 'no-store', redirect: 'error',
+          referrerPolicy: 'no-referrer', signal: controller.signal
+        });
+        if (response.ok) {
+          // Verification can return access/refresh tokens. Never parse, persist,
+          // display or log the successful response. Desktop sign-in is separate.
+          token = '';
+          if (response.body) await response.body.cancel().catch(() => {});
+          show('Email verified', 'Return to Lecture Agent and sign in. You can close this tab.');
+          detail.textContent = 'Your free trial starts when you first activate Lecture Agent, not on this page.';
+          document.title = 'Email verified — Lecture Agent';
+        } else {
+          let code = '';
+          try {
+            const error = await response.json();
+            code = typeof error.error_code === 'string' ? error.error_code : error.code;
+          } catch { /* Never display raw responses or request information. */ }
+          if (code === 'otp_expired' || response.status === 403) {
+            token = '';
+            show('This link has expired or was already used', 'If you have already verified your email, return to Lecture Agent and sign in. Otherwise, contact the Lecture Agent owner for a fresh confirmation email.');
+          } else if (response.status === 429) {
+            show('Please wait a moment', 'Too many verification attempts. Wait a few minutes, then try again.', 'Try again');
+          } else if (response.status >= 500) {
+            show('Verification is temporarily unavailable', 'Please try again shortly. If an earlier attempt succeeded, you can sign in to Lecture Agent.', 'Try again');
+          } else {
+            token = '';
+            show('We could not verify this link', 'Open the original confirmation email and try its link. If it still fails, contact the Lecture Agent owner. If already verified, return to the app and sign in.');
+          }
+        }
+      } catch {
+        show('We could not confirm the result', 'Check your connection and try again. If the request already succeeded, you can return to Lecture Agent and sign in.', 'Try again');
+      } finally {
+        clearTimeout(timeout);
+        busy = false;
+        button.disabled = false;
+      }
+    });
+  });
+})();
+  </script>
+  <style>
+    :root { color-scheme: light dark; --paper: #f5f5f5; --ink: #182235; --muted: #566579; --line: #ccd5e1; --button: #31343a; --hover: #454a52; --button-ink: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.6; }
+    main { width: min(100% - 48px, 520px); margin: clamp(48px, 15vh, 140px) auto 40px; }
+    .brand { font-size: 14px; font-weight: 600; letter-spacing: .02em; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 30px 0 12px; font-size: clamp(25px, 5vw, 30px); line-height: 1.25; font-weight: 600; overflow-wrap: anywhere; }
+    p { margin: 0 0 24px; color: var(--muted); }
+    button { font: inherit; font-size: 15px; font-weight: 600; padding: 10px 22px; border: 1px solid transparent; border-radius: 5px; background: var(--button); color: var(--button-ink); cursor: pointer; min-height: 44px; }
+    button:hover { background: var(--hover); }
+    button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+    button:disabled { opacity: .65; cursor: wait; }
+    [hidden] { display: none !important; }
+    .detail { margin-top: 28px; font-size: 13px; }
+    @media (prefers-color-scheme: dark) { :root { --paper: #252729; --ink: #e7e5df; --muted: #adb0b5; --line: #42464c; --button: #e7e5df; --hover: #fff; --button-ink: #252729; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="brand">Lecture Agent</header>
+    <section aria-live="polite" aria-atomic="true">
+      <h1 id="heading">Email confirmation</h1>
+      <p id="message">Open this page using the link in your confirmation email.</p>
+      <button id="verify" type="button" hidden>Verify email</button>
+      <p id="detail" class="detail">No password or AI key is needed here. Sign in only inside Lecture Agent.</p>
+    </section>
+    <noscript><p>JavaScript is required to verify your email and clear the confirmation link from the address bar. Close this tab and open the email link in a browser with JavaScript enabled.</p></noscript>
+  </main>
+</body>
+</html>
